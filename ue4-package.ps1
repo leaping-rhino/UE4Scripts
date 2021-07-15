@@ -19,6 +19,9 @@ param (
     [switch]$test = $false,
     # Browse the output directory in file explorer after packaging
     [switch]$browse = $false,
+    # VCS to use git, p4 or none. Defaults to git.
+    [ValidateSet("git", "p4", "none")]
+    [string]$vcs = "git",
     # Dry-run; does nothing but report what *would* have happened
     [switch]$dryrun = $false,
     [switch]$help = $false
@@ -49,10 +52,13 @@ function Write-Usage {
     Write-Output "                : Build only named variants instead of DefaultVariants from packageconfig.json"
     Write-Output "  -test         : Testing mode, separate builds, allow dirty working copy"
     Write-Output "  -browse       : After packaging, browse the output folder"
+    Write-Output "  -vcs          : The VCS to use when modifying the version in ini file: git, p4 or none."
     Write-Output "  -dryrun       : Don't perform any actual actions, just report on what you would do"
     Write-Output "  -help         : Print this help"
     Write-Output " "
     Write-Output "Environment Variables:"
+    Write-Output "  You can set environment variables manually or via your system configuration. Additionally `$src/ue4-source.ps1 is sourced if it exists. The following variables are directly supported by the script:"
+    Write-Output " "
     Write-Output "  UE4INSTALL   : Use a specific UE4 install."
     Write-Output "               : Default is to find one based on project version, under UE4ROOT"
     Write-Output "  UE4ROOT      : Parent folder of all binary UE4 installs (detects version). "
@@ -75,6 +81,13 @@ if ($help) {
     Exit 0
 }
 
+# If a ue4-source-env.ps1 script exists in $src, source it
+$ue4SourceEnvScript = Join-Path $src ue4-source-env.ps1
+if (Test-Path $ue4SourceEnvScript) {
+    Write-Verbose "Sourcing $ue4SourceEnvScript..."
+    . "$($ue4SourceEnvScript)"
+}
+
 Write-Output "~-~-~ UE4 Packaging Helper Start ~-~-~"
 
 if ($test) {
@@ -93,9 +106,14 @@ if (($major -or $minor -or $patch -or $hotfix) -and $keepversion) {
 }
 
 # Detect Git
-if ($src -ne ".") { Push-Location $src }
-$isGit = Test-Path ".git"
-if ($src -ne ".") { Pop-Location }
+if ($vcs -eq "git") {
+    if ($src -ne ".") { Push-Location $src }
+    $isGit = Test-Path ".git"
+    if ($src -ne ".") { Pop-Location }
+}
+else {
+    $isGit = $false
+}
 
 # Check working copy is clean (Git only)
 if (-not $test -and $isGit) {
@@ -176,23 +194,51 @@ try {
         $versionNumber = Get-Project-Version $src
     } else {
         # Bump up version, passthrough options
+        if ($src -ne ".") { Push-Location $src }
         try {
-            $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix -dryrun:$dryrun
-            if (-not $dryrun -and $isGit) {
-                if ($src -ne ".") { Push-Location $src }
-
+            if (-not $dryrun) {
                 $verIniFile = Get-Project-Version-Ini-Filename $src
-                git add "$($verIniFile)"
-                if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
-                git commit -m "Version bump to $versionNumber"
-                if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
 
-                if ($src -ne ".") { Pop-Location }
+                switch ($vcs) {
+                    "git" {
+                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                        git add "$($verIniFile)"
+                        if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                        git commit -m "Version bump to $versionNumber"
+                        if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                    }
+                    "p4" {
+                        # We cannot modify the file until it is checked out, so do dry run here to get the new version number for the changelist description
+                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix -dryrun:$true
+                        $p4change = Write-Output "Change: new `nDescription: Version bump to $versionNumber" | p4 change -i | Select-String -Pattern "Change ([0-9]+)"
+                        if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                        $p4change = $p4change.Matches[0].Groups[1].Value
+                        p4 edit -c $p4change "$($verIniFile)"
+                        if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                        # Actually increment the version
+                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                        p4 submit -c $p4change
+                        if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                    }
+                    "none" {
+                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                    }
+                    Default {
+                        Write-Output "-vcs has an unexpected value: $vcs"
+                        Exit 5
+                    }
+                }
+            }
+            else {
+                $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix -dryrun:$true
             }
         }
         catch {
             Write-Output $_.Exception.Message
             Exit 6
+        }
+        finally {
+            if ($src -ne ".") { Pop-Location }
         }
     }
     # Keep test builds separate
@@ -203,7 +249,7 @@ try {
 
     # For tagging release
     # We only need to grab the main version once
-    if ((-not $keepversion) -or $forcetag) {
+    if ($vcs -eq "git" -and ((-not $keepversion) -or $forcetag)) {
         $forcearg = ""
         if ($forcetag) {
             $forcearg = "-f"
