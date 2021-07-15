@@ -61,8 +61,11 @@ function Write-Usage {
 }
 
 if ($src.Length -eq 0) {
-    $src = "."
+    $src = (Resolve-Path ".").Path
     Write-Verbose "-src not specified, assuming current directory"
+}
+else {
+    $src = (Resolve-Path $src).Path
 }
 
 $ErrorActionPreference = "Stop"
