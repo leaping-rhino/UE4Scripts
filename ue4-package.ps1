@@ -9,8 +9,8 @@ param (
     [switch]$minor = $false,
     [switch]$patch = $false,
     [switch]$hotfix = $false,
-    # Don't incrememnt version
-    [switch]$keepversion = $false,
+    # Explicit version to set
+    [string]$version = "",
     # Force move tag
     [switch]$forcetag = $false,
     # Name of variant to build (optional, uses DefaultVariants from packageconfig.json if unspecified)
@@ -22,6 +22,8 @@ param (
     # VCS to use git, p4 or none. Defaults to git.
     [ValidateSet("git", "p4", "none")]
     [string]$vcs = "git",
+    # If a VCS is used and the version was changed, use this flag to indicate that the change should be committed.
+    [switch]$vcscommit = $false,
     # Dry-run; does nothing but report what *would* have happened
     [switch]$dryrun = $false,
     [switch]$help = $false
@@ -39,25 +41,26 @@ param (
 function Write-Usage {
     Write-Output "Steve's UE4 packaging tool"
     Write-Output "Usage:"
-    Write-Output "  ue4-package.ps1 [-src:sourcefolder] [-major|-minor|-patch|-hotfix] [-keepversion] [-force] [-variant=VariantName] [-test] [-dryrun]"
+    Write-Output "  ue4-package.ps1 [-src:sourcefolder] [-major|-minor|-patch|-hotfix] [-force] [-variant=VariantName] [-test] [-dryrun]"
     Write-Output " "
     Write-Output "  -src          : Source folder (current folder if omitted), must contain packageconfig.json"
     Write-Output "  -major        : Increment major version i.e. [x++].0.0.0"
     Write-Output "  -minor        : Increment minor version i.e. x.[x++].0.0"
-    Write-Output "  -patch        : Increment patch version i.e. x.x.[x++].0 (default)"
+    Write-Output "  -patch        : Increment patch version i.e. x.x.[x++].0"
     Write-Output "  -hotfix       : Increment hotfix version i.e. x.x.x.[x++]"
-    Write-Output "  -keepversion  : Keep current version number, doesn't tag unless -forcetag"
+    Write-Output "  -version      : Explicit version to set, i.e. 1.0.0.0"
     Write-Output "  -forcetag     : Move any existing version tag"
     Write-Output "  -variants Name1,Name2,Name3"
     Write-Output "                : Build only named variants instead of DefaultVariants from packageconfig.json"
     Write-Output "  -test         : Testing mode, separate builds, allow dirty working copy"
     Write-Output "  -browse       : After packaging, browse the output folder"
     Write-Output "  -vcs          : The VCS to use when modifying the version in ini file: git, p4 or none."
+    Write-Output "  -vcscommit    : If the version ini was modified, commit the change via the vcs specified with -vcs."
     Write-Output "  -dryrun       : Don't perform any actual actions, just report on what you would do"
     Write-Output "  -help         : Print this help"
     Write-Output " "
     Write-Output "Environment Variables:"
-    Write-Output "  You can set environment variables manually or via your system configuration. Additionally `$src/ue4-source.ps1 is sourced if it exists. The following variables are directly supported by the script:"
+    Write-Output "  You can set environment variables manually or via your system configuration:"
     Write-Output " "
     Write-Output "  UE4INSTALL   : Use a specific UE4 install."
     Write-Output "               : Default is to find one based on project version, under UE4ROOT"
@@ -81,13 +84,6 @@ if ($help) {
     Exit 0
 }
 
-# If a ue4-source-env.ps1 script exists in $src, source it
-$ue4SourceEnvScript = Join-Path $src ue4-source-env.ps1
-if (Test-Path $ue4SourceEnvScript) {
-    Write-Verbose "Sourcing $ue4SourceEnvScript..."
-    . "$($ue4SourceEnvScript)"
-}
-
 Write-Output "~-~-~ UE4 Packaging Helper Start ~-~-~"
 
 if ($test) {
@@ -99,8 +95,22 @@ if (([bool]$major + [bool]$minor + [bool]$patch + [bool]$hotfix) -gt 1) {
     Print-Usage
     Exit 5
 }
-if (($major -or $minor -or $patch -or $hotfix) -and $keepversion) {
-    Write-Output  "ERROR: Can't set keepversion at the same time as major/minor/patch/hotfix!"
+$keepversion = $true
+if (($major -or $minor -or $patch -or $hotfix)) {
+    $keepversion = $false
+}
+# Trim leading and trailing spaces from version
+$version = $version.Trim()
+if ($version.Length -gt 0) {
+    $setVersion = $true
+    $keepversion = $false
+}
+else {
+    $setVersion = $false
+}
+
+if (($major -or $minor -or $patch -or $hotfix) -and $setVersion) {
+    Write-Output  "ERROR: Can't set version at the same time as major/minor/patch/hotfix!"
     Print-Usage
     Exit 5
 }
@@ -186,12 +196,16 @@ try {
         Close-UE-Editor $editorprojname $dryrun
     }
 
-    if (([bool]$major + [bool]$minor + [bool]$patch + [bool]$hotfix) -eq 0) {
-        $patch = $true
-    }
     $versionNumber = $null
+    $currentVersionNumber = Get-Project-Version $src
+    # If -version is set but the value matches the current version, set keepversion
+    if ($setVersion -and $currentVersionNumber -eq $version) {
+        Write-Verbose "Current version ($currentVersionNumber) matches -version $version, not changing version."
+        $keepversion = $true
+    }
+
     if ($keepversion) {
-        $versionNumber = Get-Project-Version $src
+        $versionNumber = $currentVersionNumber
     } else {
         # Bump up version, passthrough options
         if ($src -ne ".") { Push-Location $src }
@@ -201,27 +215,51 @@ try {
 
                 switch ($vcs) {
                     "git" {
-                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                        if ($setVersion) {                        
+                            $versionNumber = Set-Project-Version -srcfolder:$src -version:$version
+                        }
+                        else {
+                            $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                        }
                         git add "$($verIniFile)"
                         if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
-                        git commit -m "Version bump to $versionNumber"
-                        if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                        if ($vcscommit) {
+                            git commit -m "Set Version to $versionNumber"
+                            if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                        }
                     }
                     "p4" {
                         # We cannot modify the file until it is checked out, so do dry run here to get the new version number for the changelist description
-                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix -dryrun:$true
-                        $p4change = Write-Output "Change: new `nDescription: Version bump to $versionNumber" | p4 change -i | Select-String -Pattern "Change ([0-9]+)"
+                        if ($setVersion) {                        
+                            $versionNumber = $version
+                        }
+                        else {
+                            $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix -dryrun:$true
+                        }
+                        $p4change = Write-Output "Change: new `nDescription: Set Version to $versionNumber" | p4 change -i | Select-String -Pattern "Change ([0-9]+)"
                         if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
                         $p4change = $p4change.Matches[0].Groups[1].Value
                         p4 edit -c $p4change "$($verIniFile)"
                         if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
                         # Actually increment the version
-                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
-                        p4 submit -c $p4change
-                        if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                        if ($setVersion) {                        
+                            Set-Project-Version -srcfolder:$src -version:$version
+                        }
+                        else {
+                            $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                        }
+                        if ($vcscommit) {
+                            p4 submit -c $p4change
+                            if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
+                        }
                     }
                     "none" {
-                        $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                        if ($setVersion) {                        
+                            $versionNumber = Set-Project-Version -srcfolder:$src -version:$version
+                        }
+                        else {
+                            $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix
+                        }
                     }
                     Default {
                         Write-Output "-vcs has an unexpected value: $vcs"
@@ -230,7 +268,12 @@ try {
                 }
             }
             else {
-                $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix -dryrun:$true
+                if ($setVersion) {                        
+                    $versionNumber = $version
+                }
+                else {
+                    $versionNumber = Increment-Project-Version -srcfolder:$src -major:$major -minor:$minor -patch:$patch -hotfix:$hotfix -dryrun:$true
+                }
             }
         }
         catch {
@@ -249,7 +292,7 @@ try {
 
     # For tagging release
     # We only need to grab the main version once
-    if ($vcs -eq "git" -and ((-not $keepversion) -or $forcetag)) {
+    if ($vcs -eq "git" -and $vcscommit -and ((-not $keepversion) -or $forcetag)) {
         $forcearg = ""
         if ($forcetag) {
             $forcearg = "-f"

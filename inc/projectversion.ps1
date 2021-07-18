@@ -121,3 +121,68 @@ function Increment-Project-Version {
     }
 }
 
+function Set-Project-Version {
+
+    param (
+        [string]$srcfolder,
+        [string]$version,
+        [bool]$dryrun = $false
+        )
+
+    $gameIniFile = Get-Project-Version-Ini-Filename $srcfolder
+    $gameIni = Get-IniContent $gameIniFile
+
+    Write-Verbose "[set-version] M:$major m:$minor p:$patch h:$hotfix"
+
+    # We have to use Write-Verbose now that we're using the return value, Write-Output
+    # appends to the return value. Write-Verbose works but doesn't appear by default
+    # Unless user sets $VerbosePreference="Continue"
+
+    # Bump the version number of the build
+    Write-Verbose "[set-version] Updating $gameIniFile"
+
+    $versionString = $gameIni["/Script/EngineSettings.GeneralProjectSettings"].ProjectVersion
+    Write-Verbose "[set-version] Current version is $versionString"
+
+    # Regex features:
+    # - captures pre- and post-fix text and retains
+    $regex = "([^\d]*)([0-9.]*)(.*)"
+    $matches = $versionString | Select-String -Pattern $regex
+    if (($matches.Matches.Count -gt 0) -and ($matches.Matches[0].Groups.Count -ge 2)) {
+        $prefix = $matches.Matches[0].Groups[1].Value
+        $postfix = $matches.Matches[0].Groups[-1].Value
+
+        $newver = "$prefix$($version)$postfix"
+        Write-Verbose "[set-version] Setting version to $newver"
+
+        if ($dryrun) {
+            Write-Verbose "[set-version] dryrun: not changing $gameIniFile"
+        } else {
+            # We don't use PsIni to write, because it can screw up some nested non-trivial properties :(
+            #$gameIni["/Script/EngineSettings.GeneralProjectSettings"].ProjectVersion = $newver
+            #Out-IniFile -Force -InputObject $gameIni -FilePath $gameIniFile
+
+            $verlineregex = "ProjectVersion=$regex"
+            $matches = Select-String -Path "$gameIniFile" -Pattern $verlineregex
+        
+            if ($matches.Matches.Count -gt 0) {
+                $origline = $matches.Matches[0].Value
+                $newline = "ProjectVersion=$newver"
+        
+                (Get-Content "$gameIniFile").replace($origline, $newline) | Set-Content "$gameIniFile"
+                Write-Verbose "[set-version] Success! Version is now $newver"
+
+            } else {
+                throw "[set-version] Error: unable to substitute current version, unable to find '$verlineregex'"
+            }
+
+
+        }
+
+        return "$newver"
+
+    } else {
+        throw "[set-version] Error: unable to read current version"
+    }
+}
+
