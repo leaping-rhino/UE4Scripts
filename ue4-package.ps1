@@ -240,6 +240,8 @@ try {
                         if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
                         $p4change = $p4change.Matches[0].Groups[1].Value
                         p4 edit -c $p4change "$($verIniFile)"
+                        $txtFile = (Join-Path "$src" DistBuildVersion.txt)
+                        p4 edit -c $p4change "$($txtFile)"
                         if ($LASTEXITCODE -ne 0) { Exit $LASTEXITCODE }
                         # Actually increment the version
                         if ($setVersion) {                        
