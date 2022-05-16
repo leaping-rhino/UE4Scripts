@@ -6,7 +6,7 @@ Many of the tools in this repo, such as the [Packaging Script](./Package.md)
 and the [Release Script](./Release.md), depend on a configuration file named
 `packageconfig.json`.
 
-This file should be in the root of your UE4 project. It's contents are set out
+This file should be in the root of your Unreal project. It's contents are set out
 in detail later in this document, but but here's an example demonstrating many of the features:
 
 ```json
@@ -147,7 +147,7 @@ zipped packages will be created in.
 *Optional Setting - string* 
 
 By default, scripts will locate your `.uproject` file automatically in the root of
-your UE4 project folder. If for any reason you have more than one, you can 
+your Unreal project folder. If for any reason you have more than one, you can 
 specify which to use with this setting.
 
 ## Package Variants
@@ -173,7 +173,7 @@ Unreal, e.g. "Win64", "Linux" etc
 ### `Configuration`
 *Mandatory Setting - string*
 
-The build configuration for this variant as defined by UE4, e.g. "Development" or "Shipping".
+The build configuration for this variant as defined by Unreal, e.g. "Development" or "Shipping".
 
 ### `ExtraBuildArguments`
 *Optional Setting - string*

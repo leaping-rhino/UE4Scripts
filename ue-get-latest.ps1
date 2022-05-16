@@ -7,22 +7,22 @@ param (
 )
 
 function Print-Usage {
-    Write-Output "Steve's UE4 Get Latest Tool"
-    Write-Output "   Get latest from repo and build for dev. Will close UE4 editor!"
+    Write-Output "Steve's Unreal Get Latest Tool"
+    Write-Output "   Get latest from repo and build for dev. Will close Unreal editor!"
     Write-Output "Usage:"
-    Write-Output "  ue4-get-latest.ps1 [[-src:]sourcefolder] [Options]"
+    Write-Output "  ue-get-latest.ps1 [[-src:]sourcefolder] [Options]"
     Write-Output " "
     Write-Output "  -src         : Source folder (current folder if omitted)"
     Write-Output "               : (should be root of project)"
-    Write-Output "  -nocloseeditor : Don't close UE4 editor (this will prevent DLL cleanup)"
+    Write-Output "  -nocloseeditor : Don't close Unreal editor (this will prevent DLL cleanup)"
     Write-Output "  -dryrun      : Don't perform any actual actions, just report on what you would do"
     Write-Output "  -help        : Print this help"
     Write-Output " "
     Write-Output "Environment Variables:"
-    Write-Output "  UE4INSTALL   : Use a specific UE4 install."
-    Write-Output "               : Default is to find one based on project version, under UE4ROOT"
-    Write-Output "  UE4ROOT      : Parent folder of all binary UE4 installs (detects version). "
-    Write-Output "               : Default C:\Program Files\Epic Games"
+    Write-Output "  UEINSTALL   : Use a specific Unreal install."
+    Write-Output "              : Default is to find one based on project version, under UEROOT"
+    Write-Output "  UEROOT      : Parent folder of all binary Unreal installs (detects version). "
+    Write-Output "              : Default C:\Program Files\Epic Games"
     Write-Output " "
 
 }
@@ -78,7 +78,7 @@ try {
             $cleanupargs += "-dryrun"
         }
         # Use Invoke-Expression so we can use a string as options
-        Invoke-Expression "&'$PSScriptRoot/ue4-cleanup.ps1' $cleanupargs"
+        Invoke-Expression "&'$PSScriptRoot/ue-cleanup.ps1' $cleanupargs"
 
         # Stopped using rebase because it's a PITA when it goes wrong
         Write-Output "Pulling latest from Git..."
@@ -97,20 +97,9 @@ try {
             }
         }
     } else {
-        # Assume svn
+        # Support Perforce?
 
-        # Hard coded for Subversion right now
-        if ($dryrun) {
-            Write-Output "Checking for updates we WOULD do:"
-            svn status --show-updates
-        } else {
-            Write-Output "Updating to latest..."
-            svn up
-        }
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "Subversion update failed, see above"
-        }
+        throw "Get Latest only supports Git right now"
     }
 
     # Now build
@@ -122,14 +111,14 @@ try {
         $cmdargs += "-dryrun"
     }
     # Use Invoke-Expression so we can use a string as options
-    Invoke-Expression "&'$PSScriptRoot/ue4-build.ps1' dev $cmdargs"
+    Invoke-Expression "&'$PSScriptRoot/ue-build.ps1' dev $cmdargs"
 
     if ($LASTEXITCODE -ne 0) {
         throw "Build process failed, see above"
     }
 
     # Automatically pull lighting builds, if environment variable defined
-    if ($Env:UE4SYNCROOT) {
+    if ($Env:UESYNCROOT -or $Env:UE4SYNCROOT) {
         $cmdargs = @()
         if ($nocloseeditor) {
             $cmdargs += "-nocloseeditor"
@@ -138,7 +127,7 @@ try {
             $cmdargs += "-dryrun"
         }
         # Use Invoke-Expression so we can use a string as options
-        Invoke-Expression "&'$PSScriptRoot/ue4-datasync.ps1' pull $cmdargs"
+        Invoke-Expression "&'$PSScriptRoot/ue-datasync.ps1' pull $cmdargs"
     
     }
 

@@ -8,11 +8,11 @@ I don't use this script very much any more because I'm using Live Coding now.
 The script also cleans up Live Coding patches but there's fewer of those.
 
 ```
-  ue4-cleanup.ps1 [[-src:]sourcefolder] [Options]
+  ue-cleanup.ps1 [[-src:]sourcefolder] [Options]
 
   -src         : Source folder (current folder if omitted)
                : (should be root of project)
-  -nocloseeditor : Don't close UE4 editor (this will prevent DLL cleanup)
+  -nocloseeditor : Don't close Unreal editor (this will prevent DLL cleanup)
   -lfsprune    : Call 'git lfs prune' to delete old LFS files as well
   -dryrun      : Don't perform any actual actions, just report on what you would do
   -help        : Print this help
