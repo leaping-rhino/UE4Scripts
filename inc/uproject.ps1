@@ -50,6 +50,29 @@ function Get-UE-Version {
     return $uproject.EngineAssociation
 }
 
+function Get-UE-Version-JSON-From-Install {
+    param (
+        # the install path of the engine (the directory that contains the Engine directory)
+        [string]$uinstall
+    )
+
+    # Get version json object: Engine/Build/Build.version
+    return  Get-Content "$(Join-Path "$uinstall" "Engine\Build\Build.version")" | ConvertFrom-Json
+}
+
+function Get-UE-Major-Minor-Version-String-From-Install {
+    param (
+        # the install path of the engine (the directory that contains the Engine directory)
+        [string]$uinstall
+    )
+
+    # Get version number Engine's Build/Build.version json file
+    $versionfiledata = Get-UE-Version-JSON-From-Install $uinstall
+    $majorVersion = $versionfiledata.MajorVersion
+    $minorVersion = $versionfiledata.MinorVersion
+    return "${majorVersion}.${minorVersion}"
+}
+
 function Get-Is-UE5 {
     param (
         # the uproject object from Read-Uproject

@@ -18,6 +18,7 @@ param (
 . $PSScriptRoot\inc\platform.ps1
 . $PSScriptRoot\inc\packageconfig.ps1
 . $PSScriptRoot\inc\projectversion.ps1
+. $PSScriptRoot\inc\uproject.ps1
 . $PSScriptRoot\inc\filetools.ps1
 . $PSScriptRoot\inc\steam.ps1
 . $PSScriptRoot\inc\itch.ps1
@@ -73,6 +74,10 @@ try {
     $projfile = Get-Uproject-Filename -srcfolder:$src -config:$config
     $proj = Read-Uproject $projfile
     $ueVersion = Get-UE-Version $proj
+    if (-not $ueVersion) {
+        $ueinstall = Get-UE-Install $ueVersion
+        $ueVersion = Get-UE-Major-Minor-Version-String-From-Install $ueInstall
+    }
 
     if ($latest) {
         $version = Get-Project-Version $src

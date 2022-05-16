@@ -77,13 +77,6 @@ try {
         Write-Output "Building $uprojname for $mode"
     }
 
-    # Check version number of Unreal project so we know which version to run
-    # We can read this from .uproject which is JSON
-    $uproject = Get-Content $uprojfile | ConvertFrom-Json
-    $uversion = $uproject.EngineAssociation
-
-    Write-Output "Engine version is $uversion"
-
     # UEINSTALL env var should point at the root of the *specific version* of 
     # Unreal you want to use. This is mainly for use in source builds, default is
     # to build it from version number and root of all UE binary installs
@@ -105,8 +98,20 @@ try {
             $uroot = "C:\Program Files\Epic Games"
         } 
 
+        # Check version number of Unreal project so we know which version to run
+        # We can read this from .uproject which is JSON
+        $uproject = Get-Content $uprojfile | ConvertFrom-Json
+        $uversion = $uproject.EngineAssociation
+
         $uinstall = Join-Path $uroot "UE_$uversion"
     }
+    else
+    {
+        # Get version number Engine's Build/Build.version json file
+        $uversion = Get-UE-Major-Minor-Version-String-From-Install $uinstall
+    }
+
+    Write-Output "Engine version is $uversion"
 
     # Test we can find Build.bat
     $batchfolder = Join-Path "$uinstall" "Engine\Build\BatchFiles"

@@ -157,6 +157,9 @@ try {
     $proj = Read-Uproject $projfile
     $ueVersion = Get-UE-Version $proj
     $ueinstall = Get-UE-Install $ueVersion
+    if (-not $ueVersion) {
+        $ueVersion = Get-UE-Major-Minor-Version-String-From-Install $ueInstall
+    }
 
     $chosenVariantNames = $config.DefaultVariants
     if ($variants) {
